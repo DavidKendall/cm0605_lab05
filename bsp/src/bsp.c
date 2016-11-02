@@ -4,12 +4,18 @@
 #include <board.h>
 #include <leds.h>
 #include <buttons.h>
+#include <adc.h>
 #include <potentiometer.h>
 #include <accelerometer.h>
 #include <lcd.h>
+#include <pwm.h>
 #include <can.h>
 #include <bsp.h>
 
+static inline void pllFeed(void) {
+  PLLFEED = 0xAA;
+  PLLFEED = 0x55;
+}
 
 /*************************************************************************
 * Function Name: mamInit
@@ -31,46 +37,32 @@ void mamInit() {
  * Parameters: void
  * Return: void
  *
- * Description: Initialize PLL and clocks' dividers. Hclk - 288MHz,
+ * Description: Initialize PLL and clocks' dividers. Hclk - 480MHz,
  * Usbclk - 48MHz
  *
  *************************************************************************/
-void clockInit(void)
-{
-  // 1. Init OSC
-  SCS_bit.OSCRANGE = 0;
-  SCS_bit.OSCEN = 1;
-  // 2.  Wait for OSC ready
-  while(!SCS_bit.OSCSTAT);
-  // 3. Disconnect PLL
-  PLLCON_bit.PLLC = 0;
-  PLLFEED = 0xAA;
-  PLLFEED = 0x55;
-  // 4. Disable PLL
-  PLLCON_bit.PLLE = 0;
-  PLLFEED = 0xAA;
-  PLLFEED = 0x55;
-  // 5. Select source clock for PLL
-  CLKSRCSEL_bit.CLKSRC = 1; // Selects the main oscillator as a PLL clock source.
-  // 6. Set PLL settings 288 MHz
-  PLLCFG_bit.MSEL = 24-1;
-  PLLCFG_bit.NSEL = 2-1;
-  PLLFEED = 0xAA;
-  PLLFEED = 0x55;
-  // 7. Enable PLL
-  PLLCON_bit.PLLE = 1;
-  PLLFEED = 0xAA;
-  PLLFEED = 0x55;
-  // 8. Wait for the PLL to achieve lock
-  while(!PLLSTAT_bit.PLOCK);
-  // 9. Set clk divider settings
-  CCLKCFG   = 6-1;            // 1/6 Fpll
-  USBCLKCFG = 6-1;            // 1/6 Fpll - 48 MHz
-  PCLKSEL0 = PCLKSEL1 = 0;    // other peripherals
-  // 10. Connect the PLL
-  PLLCON_bit.PLLC = 1;
-  PLLFEED = 0xAA;
-  PLLFEED = 0x55;
+void clockInit(void) {
+                             // Init OSC
+  SCS_bit.OSCRANGE = 0;          // frequency range of main oscillator is 1MHz to 20 MHz
+  SCS_bit.OSCEN = 1;             // enable the main oscillator
+  PLLCON_bit.PLLC = 0;       // Disconnect PLL
+  pllFeed();                 // Force update of internal PLL registers
+  PLLCON_bit.PLLE = 0;       // Disable PLL
+  pllFeed();                 // Force update of internal PLL registers
+  while(!SCS_bit.OSCSTAT);   // Wait until main oscillator is stable
+  CLKSRCSEL_bit.CLKSRC = 1;  // Selects the main oscillator as the PLL clock source.
+  PLLCFG_bit.MSEL = 20-1;    // PLL output of 480MHz needs multiplier of 20 ...
+  PLLCFG_bit.NSEL = 1-1;     // ...and divider of 1
+  pllFeed();                 // Force update of internal PLL registers
+  PLLCON_bit.PLLE = 1;       // Enable PLL
+  pllFeed();                 // Force update of internal PLL registers
+  USBCLKCFG = 10-1;          // Set USB clock to 48 MHz - 1/10 of PLL output
+  CCLKCFG   = 8-1;           // Set CPU clock to 60 MHz - 1/8 of PLL output
+  while(!PLLSTAT_bit.PLOCK); // Wait for the PLL to achieve lock
+  PLLCON_bit.PLLC = 1;       // Connect the PLL
+  pllFeed();                 // Force update of internal PLL registers
+  PCLKSEL0 = 0x54000000;     // Select default peripheral clock rate (1/4 CPU clock rate)
+  PCLKSEL1 = 0x00000000;     // for all peripherals except CAN1, CAN2 and ACF which are set to CPU clock rate
 }
 
 
@@ -121,26 +113,31 @@ uint32_t Mul = 1, Div = 1, Osc, Fsclk;
  * Description: return Pclk [Hz]
  *
  *************************************************************************/
-uint32_t getFpclk(uint32_t peripheral)
-{
-uint32_t Fpclk;
-uint32_t *pReg = (uint32_t *)((peripheral < 32)?&PCLKSEL0:&PCLKSEL1);
+uint32_t getFpclk(uint32_t peripheral) {
+  uint32_t Fpclk;
+  uint32_t *pReg = (uint32_t *)((peripheral < 32)?&PCLKSEL0:&PCLKSEL1);
 
   peripheral  &= 0x1F;   // %32
   Fpclk = getFsclk();
   // find peripheral appropriate periphery divider
-  switch((*pReg >> peripheral) & 3)
-  {
-  case 0:
-    Fpclk /= 4;
-    break;
-  case 1:
-    break;
-  case 2:
-    Fpclk /= 2;
-    break;
-  default:
-    Fpclk /= 8;
+  switch((*pReg >> peripheral) & 3) {
+    case 0:
+      Fpclk /= 4;
+      break;
+    case 1: // Fpclk == Fsclk
+      break;
+    case 2:
+      Fpclk /= 2;
+      break;
+    default:
+      if ((peripheral == CAN1_PCLK_OFFSET) ||
+          (peripheral == CAN2_PCLK_OFFSET) ||
+          (peripheral == ACF_PCLK_OFFSET)) {
+        Fpclk /= 6;
+      }
+      else {
+        Fpclk /= 8;
+      }
   }
   return(Fpclk);
 }
@@ -296,8 +293,9 @@ void bspInit(void) {
   lowLevelInit();
   ledsInit();
   buttonsInit();
-  potentiometerInit();
+  adcInit();
   accelerometerInit();
+  potentiometerInit();
   lcdInit();
   canInit();
 }

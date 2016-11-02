@@ -3,17 +3,12 @@
 
 #include <stdint.h>
 
-#define AIN0 0
-#define AIN1 1
-#define AIN2 2
-#define AIN3 3
-#define AIN4 4
-#define AIN5 5
-#define AIN6 6
-
-
-void adcInitSound(void);
-void adcInit(uint32_t channel);
-uint32_t adcGetState(uint32_t channel);
+typedef enum {
+  AIN0 = 0UL, AIN1, AIN2, AIN3, AIN4, AIN5, AIN6
+} adcChannel_t;
+  
+void adcInit(void);
+void adcChannelInit(adcChannel_t channel);
+uint32_t adcGetState(adcChannel_t channel);
 
 #endif

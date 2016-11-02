@@ -1059,6 +1059,9 @@
         <name>$PROJ_DIR$\..\..\bsp\src\leds.c</name>
       </file>
       <file>
+        <name>$PROJ_DIR$\..\..\bsp\src\median_filter.c</name>
+      </file>
+      <file>
         <name>$PROJ_DIR$\..\..\bsp\src\potentiometer.c</name>
       </file>
       <file>

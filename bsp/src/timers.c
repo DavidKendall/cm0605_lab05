@@ -47,6 +47,29 @@ void stopTimer(timerIdentifier_t timer) {
   }
 }
 
+void initWatch(void) {
+  T1TCR = 0x02;  // reset timer
+  T1PR = 0x00;   // set prescaler to 0
+  T1CTCR = 0x00; // set mode: every rising PCLK edge
+  T1MR0 = 0x00;  // not interested in match
+  T1IR = 0xff;   // reset all interrupts
+  T1MCR = 0x00;  // not interested in match
+}
+
+
+void startWatch(void) {
+  T1TCR = 0x01;  // start timer 1
+}
+
+uint32_t stopWatch(void) {
+  uint32_t counter = 0;
+  
+  T1TCR = 0x00;    // stop the timer 
+  counter = T1TC;  // get the value of the timer counter
+  T1TCR = 0x02;    // reset the timer
+  return counter;
+}
+
 static void timer0ISR(void) {
   userFuncInISR0(); // Call user-installed handler
   T0IR = 1;         // Clear the interrupt on MR0; writing 0 to the other bits is safe

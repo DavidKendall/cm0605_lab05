@@ -78,3 +78,24 @@ bool isButtonPressedInState(uint32_t state, uint8_t button) {
   return (state & buttonMasks[button] ? false : true);
 }
 
+
+buttonState_t updateButtonState(uint32_t state, uint8_t button) {
+  static buttonState_t buttonStates[7] = {B_IDLE, B_IDLE, B_IDLE, B_IDLE,
+                                          B_IDLE, B_IDLE, B_IDLE};
+  switch (buttonStates[button]) {
+  case B_IDLE:
+    buttonStates[button] = (isButtonPressedInState(state, button) ? B_PRESSED : B_IDLE);
+    break;
+  case B_PRESSED:
+    buttonStates[button] = (isButtonPressedInState(state, button) ? B_PRESSED : B_PRESSED_RELEASED);
+    break;
+  case B_PRESSED_RELEASED:
+    buttonStates[button] = (isButtonPressedInState(state, button) ? B_PRESSED : B_IDLE);
+    break;
+  default:
+    break;
+  }
+  return buttonStates[button];                     
+}
+
+

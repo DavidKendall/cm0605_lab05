@@ -1,135 +1,142 @@
-#include <assert.h>
-#include <stdint.h>
-#include <iolpc2378.h> 
-#include <board.h>
-#include <bsp.h>
-#include <adc.h>
-
-/* Initialise ADC channel on MIC_IN - P0.25 - AD0.2
- **************************************************************************/
-void adcInitSound() {
-
-/* Assign P0.25 to AD0.2 */
-   PINSEL1_bit.P0_25 = 1;
-
-   PCONP_bit.PCAD = 1; // Enable ADC clk
-   
-/* Set ADC clk <4.5 MHz */
-   AD0CR_bit.CLKDIV = (getFpclk(24) / 45000000) + 1;
-   
-/* Select AD0.2 */
-   AD0CR_bit.SEL = 1<<2;
-   
-/* Disable all interrupts */
-   ADINTEN = 0;
-   
-/* Enable ADC */
-   AD0CR_bit.PDN = 1;
-   
-/* Start conversion now */
-   AD0CR_bit.START = 1;
-}
-
 /**************************************************************************
  * ADC Interface to LPC2378 board
  *
  * ADC.c
  *
- * There are three analogue devices on the LPC2378 board:
- *    One trim potentiometer on ANALOG_TRIP_CHANNEL and
- *    three Accelerometer inputs on X_CHANNEL, Y_CHANNEL and Z_CHANNEL
+ * There are four analogue devices on the LPC2378 board:
+ *    One trim potentiometer on ANALOG_TRIP_CHANNEL;
+ *    three accelerometer inputs on X_CHANNEL, Y_CHANNEL and Z_CHANNEL
  *
  * This interface supports Potentiometer and Accelerometer initialisation
  * and read functions
  *
  * WDHenderson
  * November 25th, 2009
+ *
+ * Modified : DK, 25-11-11
  **************************************************************************/
+
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <iolpc2378.h> 
+#include <board.h>
+#include <bsp.h>
+#include <adc.h>
+
+typedef uint32_t volatile  *pDeviceRegister_t;
+
+#define __ADC_AD0CR      (*(pDeviceRegister_t)0xE0034000)
+#define __ADC_AD0GDR     (*(pDeviceRegister_t)0xE0034004)
+#define __ADC_AD0DR0     (*(pDeviceRegister_t)0xE0034010)
+#define __ADC_AD0DR0_ADDR ((pDeviceRegister_t)0xE0034010)
+
+enum {
+  AD0CR_SEL_OFFSET    = 0,
+  AD0CR_CLKDIV_OFFSET = 8,
+  AD0CR_BURST_OFFSET  = 16,
+  AD0CR_CLKS_OFFSET   = 17,
+  AD0CR_PDN_OFFSET    = 21,
+  AD0CR_START_OFFSET  = 24,
+  AD0CR_EDGE_OFFSET   = 27
+};
+
+enum {
+  AD0CR_SEL_MASK    = (0xFF << AD0CR_SEL_OFFSET),
+  AD0CR_CLKDIV_MASK = (0xFF << AD0CR_CLKDIV_OFFSET),
+  AD0CR_BURST_MASK  = (0x01 << AD0CR_BURST_OFFSET),
+  AD0CR_CLKS_MASK   = (0x07 << AD0CR_CLKS_OFFSET),
+  AD0CR_PDN_MASK    = (0x01 << AD0CR_PDN_OFFSET),
+  AD0CR_START_MASK  = (0x07 << AD0CR_START_OFFSET),
+  AD0CR_EDGE_MASK   = (0x01 << AD0CR_EDGE_OFFSET)
+};
+
+void adcInit( void ) {
+
+/* Disable all ADC interrupts - this is a polling service */
+   ADINTEN = 0;
+  
+/* Configure ADC clock */
+   PCONP_bit.PCAD = 1;                     // Enable ADC clk
+   PCLKSEL0 |= (1UL << ADC_PCLK_OFFSET);   // ADC_PCLK == CCLK
+
+   __ADC_AD0CR = (
+     (0u << AD0CR_SEL_OFFSET)     |        //  [0]  in SEL bits 0 .. 7
+     (13u << AD0CR_CLKDIV_OFFSET) |        //  [13] A/D clk == ADC_PCLK / (CLKDIV + 1) <= 4.5 MHz
+     (0u << AD0CR_BURST_OFFSET)   |        //  [0]  conversions are software controlled
+     (0u << AD0CR_CLKS_OFFSET)    |        //  [0]  10 bit conversions
+     (1u << AD0CR_PDN_OFFSET)     |        //  [1]  A/D converter is operational
+     (0u << AD0CR_START_OFFSET)   |        //  [0]  no start
+     (0u << AD0CR_EDGE_OFFSET)             //  [0]  significant only when start >= 2
+   );
+}
+
+
 
 /*
  * Initialise a single ADC channel for polling
  *
- * Parameter in {AIN0, AIN1, AIN5, AIN6}
+ * Parameter in {AIN0, AIN1, AIN2, AIN5, AIN6}
  *
  * 
  *
  */
-void adcInit( uint32_t channel ) {
+void adcChannelInit( adcChannel_t channel ) {
 
 /* Check parameter in range */
-  assert( (channel == AIN0) || (channel == AIN1) || (channel == AIN5) || (channel == AIN6) );
+  assert( (channel == AIN0) || 
+          (channel == AIN1) ||
+          (channel == AIN5) || 
+          (channel == AIN6) );
 
 /* Enable required ADC channel */
    switch ( channel ) {
-   case AIN5:
-     PINSEL3_bit.P1_31 = 3;    /* Assign P1.31 to AIN5 */
+   case AIN0:
+     PINSEL1_bit.P0_23 = 1;    /* Assign P0.23 to AIN0 */
      break;
    case AIN1:
      PINSEL1_bit.P0_24 = 1;    /* Assign P0.24 to AIN1 */
      break;
-   case AIN0:
-     PINSEL1_bit.P0_23 = 1;    /* Assign P0.23 to AIN0 */
+  case AIN5:
+     PINSEL3_bit.P1_31 = 3;    /* Assign P1.31 to AIN5 */
      break;
    case AIN6:
      PINSEL0_bit.P0_12 = 3;    /* Assign P0.12 to AIN6 */
    }
-
-/* Configure ADC clock */
-   PCONP_bit.PCAD = 1; // Enable ADC clk
-   
-/* Set ADC clk <4.5 MHz */
-   AD0CR_bit.CLKDIV = (getFpclk(24) / 45000000) + 1;
-   
-/* Disable all interrupts - this is a polling service */
-   ADINTEN = 0;
-   
-/* Enable ADC */
-   AD0CR_bit.PDN = 1;
 }
-
-
 
 /*
  * Reads a single ADC channel
  * Parameter in {AIN0, AIN1, AIN5, AIN6}
  *
- * Returns -1 for a parameter error or the 10-bit ADC conversion
- * value
+ * Returns the 10-bit ADC conversion value
+ * 
  *
  */
-uint32_t adcGetState( uint32_t channel ) {
-   uint32_t AdcData;     /* Value read from ADC */
+uint32_t adcGetState( adcChannel_t channel ) {
+   uint32_t adcData;     /* Value read from ADC */
 
-/* Check parameter in range */
-  assert( (channel == ANALOG_TRIM_CHANNEL) || (channel == X_CHANNEL) || (channel == Y_CHANNEL) || (channel == Z_CHANNEL) );
-
-
-   AD0CR_bit.SEL = 0x00;       /* Deselect previous ADC input */
+/* Check parameter in range 
+  assert( (channel == AIN0) || 
+          (channel == AIN1) || 
+          (channel == AIN5) || 
+          (channel == AIN6) );
+ */
    
 /* Select ADC channel */
-   switch ( channel ) {
-   case ANALOG_TRIM_CHANNEL:
-     AD0CR_bit.SEL = 1<<5;     /* Select AIN5 - potentiometer */
-     break;
-   case X_CHANNEL:
-     AD0CR_bit.SEL = 1<<1;     /* Select AIN1 - P0.24 - accelerometer X */
-     break;
-   case Y_CHANNEL:
-     AD0CR_bit.SEL = 1<<0;     /* Select AIN0 - P0.23 - accelerometer Y */
-     break;
-   case Z_CHANNEL:
-     AD0CR_bit.SEL = 1<<6;     /* Select AIN6 - P0.12 - accelerometer Z */
-   }
+  __ADC_AD0CR &= ~AD0CR_SEL_MASK;     
+  __ADC_AD0CR |= ((0x01 << channel) << AD0CR_SEL_OFFSET);     
 
-   AD0CR_bit.PDN = 1;          /* Enable ADC */
+  __ADC_AD0CR |= (1ul << AD0CR_START_OFFSET);         // Start conversion
 
-/* Read and wait until conversion complete */
-   AD0CR_bit.START = 1;        /* Start conversion */
-   AdcData = AD0GDR;           /* Read value */
-   while ( ! (AdcData & (1UL << 31) ) ) {
-      AdcData = AD0GDR;        /* Read value */
-   }
+  adcData = *(__ADC_AD0DR0_ADDR + channel);           // Read value on selected channel
+  while ((adcData  & (1ul << 31) == 0)) {             // Test if DONE 
+    adcData = *(__ADC_AD0DR0_ADDR + channel);         // Read value
+  }
+
+  __ADC_AD0CR &= ~AD0CR_START_MASK;                   // Stop conversion
 
 /* Shift 10-bit ADC value down and mask other bits */
-   return ((AdcData >> 6) & 0x3FF);
+  return ((adcData >> 6) & 0x000003FF);
 }
+
