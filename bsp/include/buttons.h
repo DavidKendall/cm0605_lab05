@@ -25,6 +25,13 @@
 #define JS_DOWN   0x05
 #define JS_CENTRE 0x06
 
+typedef enum buttonState{
+  B_IDLE,
+  B_PRESSED,
+  B_PRESSED_RELEASED
+} buttonState_t;
+
+
 /* Initialise the interface to the buttons and joystick
  * by ensuring that all the button and joystick GPIO pins
  * are configured as inputs
@@ -50,5 +57,11 @@ bool isButtonPressed(uint8_t button);
  * otherwise return false
  */
 bool isButtonPressedInState(uint32_t state, uint8_t button);
+
+/* Update the state of a selected button and return its
+ * new state
+ */
+buttonState_t updateButtonState(uint32_t state, uint8_t button);
+
 
 #endif

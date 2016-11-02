@@ -43,6 +43,17 @@
 #define USB_CONNECT_LED_IO     IO0PIN
 #define USB_CONNECT_LED_FIO    FIO0PIN
 
+// SD LED
+#define SD_LED_MASK   (1UL<<21)
+#define SD_LED_DIR    IO0DIR
+#define SD_LED_FDIR   FIO0DIR
+#define SD_LED_SET    IO0SET
+#define SD_LED_FSET   FIO0SET
+#define SD_LED_CLR    IO0CLR
+#define SD_LED_FCLR   FIO0CLR
+#define SD_LED_IO     IO0PIN
+#define SD_LED_FIO    FIO0PIN
+
 // LCD Backlight
 #define LCD_BL_MASK         (1UL<<26)
 #define LCD_BL_DIR          IO1DIR

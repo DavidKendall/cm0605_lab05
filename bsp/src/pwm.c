@@ -19,11 +19,9 @@ void pwmInit(uint32_t majorCycleHz) {
 
 void pwmChannelInit(pwmIdentifier_t channel, uint32_t dutyCyclePerMillion) {
   uint32_t pwmMatchDuty;
-  double tmp;
 
   assert(dutyCyclePerMillion <= 1000000);
-  tmp = pwmMatchMajor * (double)dutyCyclePerMillion / 1000000;
-  pwmMatchDuty = (uint32_t)tmp;
+  pwmMatchDuty = (uint32_t)(pwmMatchMajor * (dutyCyclePerMillion / 1000000.0));
   
   switch (channel) {
   case PWM1:
@@ -63,11 +61,9 @@ void pwmChannelInit(pwmIdentifier_t channel, uint32_t dutyCyclePerMillion) {
 
 void pwmChangeDutyCycle(pwmIdentifier_t channel, uint32_t dutyCyclePerMillion) {
   uint32_t pwmMatchDuty;
-  double tmp;
   
   assert(dutyCyclePerMillion <= 1000000);
-  tmp = pwmMatchMajor * (double)dutyCyclePerMillion / 1000000;
-  pwmMatchDuty = (uint32_t)tmp;
+  pwmMatchDuty = (uint32_t)(pwmMatchMajor * (dutyCyclePerMillion / 1000000.0));
   
   switch (channel) {
   case PWM1:

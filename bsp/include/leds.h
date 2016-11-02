@@ -3,8 +3,12 @@
 
 #include <stdint.h>
 
-typedef enum ledIdentifier {USB_LINK_LED, USB_CONNECT_LED} ledIdentifier_t;
-typedef enum ledState {LED_OFF, LED_ON} ledState_t;
+typedef enum ledIdentifier {
+  USB_LINK_LED, USB_CONNECT_LED, SD_LED
+} ledIdentifier_t;
+typedef enum ledState {
+  LED_OFF, LED_ON
+} ledState_t;
 
 void ledsInit(void);
 ledState_t ledGetState(ledIdentifier_t led);
