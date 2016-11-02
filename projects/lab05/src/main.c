@@ -5,6 +5,7 @@
 #include <leds.h>
 #include <buttons.h>
 #include <lcd.h>
+#include <safeBuffer.h>
 
 enum delayConstants {ADJUST_DELAY  = 10,   MIN_DELAY = 10,  
                      DEFAULT_DELAY = 500, MAX_DELAY  = 5000};
@@ -16,9 +17,10 @@ enum delayConstants {ADJUST_DELAY  = 10,   MIN_DELAY = 10,
 *********************************************************************************************************
 */
 
-#define  APP_TASK_BUTTONS_PRIO                    4
+#define  APP_TASK_BUTTONS_PRIO                    5
 #define  APP_TASK_LINK_PRIO                       6
 #define  APP_TASK_CONNECT_PRIO                    8
+#define  APP_TASK_DISPLAY_PRIO                    10
 
 /*
 *********************************************************************************************************
@@ -29,10 +31,12 @@ enum delayConstants {ADJUST_DELAY  = 10,   MIN_DELAY = 10,
 #define  APP_TASK_BUTTONS_STK_SIZE              256
 #define  APP_TASK_LINK_STK_SIZE                 256
 #define  APP_TASK_CONNECT_STK_SIZE              256
+#define  APP_TASK_DISPLAY_STK_SIZE              256
 
 static OS_STK appTaskButtonsStk[APP_TASK_BUTTONS_STK_SIZE];
 static OS_STK appTaskLinkStk[APP_TASK_LINK_STK_SIZE];
 static OS_STK appTaskConnectStk[APP_TASK_CONNECT_STK_SIZE];
+static OS_STK appTaskDisplayStk[APP_TASK_DISPLAY_STK_SIZE];
 
 /*
 *********************************************************************************************************
@@ -43,6 +47,7 @@ static OS_STK appTaskConnectStk[APP_TASK_CONNECT_STK_SIZE];
 static void appTaskButtons(void *pdata);
 static void appTaskLinkLed(void *pdata);
 static void appTaskConnectLed(void *pdata);
+static void appTaskDisplay(void *pdata);
 
 
 /*
@@ -61,11 +66,10 @@ void decDelay(uint16_t *, uint8_t);
 *********************************************************************************************************
 */
 
-static bool flashing = false;
+static bool linkLedFlashing = false;
+static bool connectLedFlashing = false;
 static uint16_t linkLedDelay = 500;
 static uint16_t connectLedDelay = 500;
-
-static OS_EVENT *lcdSem;
 
 
 /*
@@ -98,8 +102,13 @@ int main() {
                (OS_STK *)&appTaskConnectStk[APP_TASK_CONNECT_STK_SIZE - 1],
                APP_TASK_CONNECT_PRIO);
 
-  /* Create the semaphores */
-  lcdSem = OSSemCreate(1);
+  OSTaskCreate(appTaskDisplay,                               
+               (void *)0,
+               (OS_STK *)&appTaskDisplayStk[APP_TASK_DISPLAY_STK_SIZE - 1],
+               APP_TASK_DISPLAY_PRIO);
+
+  /* Initialise the message buffer */
+  safeBufferInit();
   
   /* Start the OS */
   OSStart();                                                  
@@ -115,21 +124,53 @@ int main() {
 */
 
 static void appTaskButtons(void *pdata) {
+  uint32_t currentState;
+  uint32_t oldState;
+  message_t msg;
+  
   while (true) {
-    if (isButtonPressed(BUT_1)) {
-      flashing = true;
-    } else if (isButtonPressed(BUT_2)) {
-      flashing = false;
-    }
-    if (flashing) {
-      if (isButtonPressed(JS_UP)) {
-        decDelay(&linkLedDelay, ADJUST_DELAY);
-      } else if (isButtonPressed(JS_DOWN)) {
-        incDelay(&linkLedDelay, ADJUST_DELAY);
-      } else if (isButtonPressed(JS_RIGHT)) {
-        decDelay(&connectLedDelay, ADJUST_DELAY);
-      } else if (isButtonPressed(JS_LEFT)) {
-        incDelay(&connectLedDelay, ADJUST_DELAY);
+    currentState = buttonsRead();
+    if (currentState != oldState) {
+      oldState = currentState;
+      if (updateButtonState(currentState, BUT_1) == B_PRESSED_RELEASED) {
+        linkLedFlashing = !linkLedFlashing;
+        msg.id = USB_LINK_LED;
+        msg.flashing = linkLedFlashing;
+        msg.delay = linkLedDelay;
+        safePutBuffer(&msg);
+      }
+      if (updateButtonState(currentState, BUT_2) == B_PRESSED_RELEASED) {
+        connectLedFlashing = !connectLedFlashing;
+        msg.id = USB_CONNECT_LED;
+        msg.flashing = connectLedFlashing;
+        msg.delay = connectLedDelay;
+        safePutBuffer(&msg);
+      }
+      if (linkLedFlashing) {
+        msg.id = USB_LINK_LED;
+        msg.flashing = linkLedFlashing;
+        if (updateButtonState(currentState, JS_UP) == B_PRESSED_RELEASED) {
+          decDelay(&linkLedDelay, ADJUST_DELAY);
+          msg.delay = linkLedDelay;
+          safePutBuffer(&msg);
+        } else if (updateButtonState(currentState, JS_DOWN) == B_PRESSED_RELEASED){
+          incDelay(&linkLedDelay, ADJUST_DELAY);
+          msg.delay = linkLedDelay;
+          safePutBuffer(&msg);
+        }
+      }
+      if (connectLedFlashing) {
+        msg.id = USB_CONNECT_LED;
+        msg.flashing = connectLedFlashing;
+        if (updateButtonState(currentState, JS_RIGHT) == B_PRESSED_RELEASED) {
+          decDelay(&connectLedDelay, ADJUST_DELAY);
+          msg.delay = connectLedDelay;
+          safePutBuffer(&msg);
+        } else if (updateButtonState(currentState, JS_LEFT) == B_PRESSED_RELEASED){
+          incDelay(&connectLedDelay, ADJUST_DELAY);
+          msg.delay = connectLedDelay;
+          safePutBuffer(&msg);
+        }
       }
     }
     OSTimeDly(10);
@@ -137,43 +178,57 @@ static void appTaskButtons(void *pdata) {
 }
 
 static void appTaskLinkLed(void *pdata) {
-  uint8_t osStatus;
-  
+ 
   /* Start the OS ticker -- must be done in the highest priority task */
   osStartTick();
   
   /* Task main loop */
   while (true) {
-    if (flashing) {
+    if (linkLedFlashing) {
       ledToggle(USB_LINK_LED);
     }
-  
-    OSSemPend(lcdSem, 0, &osStatus);
-    lcdSetTextPos(2, 1);
-    lcdWrite("(LINK) F:%s", (flashing ? "ON " : "OFF"));
-    lcdSetTextPos(2, 2);
-    lcdWrite("       D:%5d", linkLedDelay);
-    osStatus = OSSemPost(lcdSem);
     OSTimeDly(linkLedDelay);
   }
 }
 
-static void appTaskConnectLed(void *pdata) {
-  uint8_t osStatus;
 
+static void appTaskConnectLed(void *pdata) {
   while (true) {
     OSTimeDly(connectLedDelay);
-    if (flashing) {
-    ledToggle(USB_CONNECT_LED);
+    if (connectLedFlashing) {
+      ledToggle(USB_CONNECT_LED);
     }
-    OSSemPend(lcdSem, 0, &osStatus);
-    lcdSetTextPos(2, 4);
-    lcdWrite("(CNCT) F:%s",(flashing ? "ON " : "OFF"));
-    lcdSetTextPos(2, 5);
-    lcdWrite("       D:%5d", connectLedDelay);
-    osStatus = OSSemPost(lcdSem);
-    OSTimeDly(connectLedDelay);
-   } 
+  } 
+}
+
+static void appTaskDisplay(void *pdata) {
+  message_t msg;
+
+  /* Initial display */
+  lcdSetTextPos(2, 1);
+  lcdWrite("(LINK) F:OFF");
+  lcdSetTextPos(2, 2);
+  lcdWrite("       D:%04d", linkLedDelay);
+  lcdSetTextPos(2, 4);
+  lcdWrite("(CNCT) F:OFF");
+  lcdSetTextPos(2, 5);
+  lcdWrite("       D:%04d", connectLedDelay);      
+
+  while (true) {
+    safeGetBuffer(&msg);
+    if (msg.id == USB_LINK_LED) {
+      lcdSetTextPos(2, 1);
+      lcdWrite("(LINK) F:%s", (msg.flashing ? "ON " : "OFF"));
+      lcdSetTextPos(2, 2);
+      lcdWrite("       D:%04d", msg.delay);
+    }
+    else {
+      lcdSetTextPos(2, 4);
+      lcdWrite("(CNCT) F:%s",(msg.flashing ? "ON " : "OFF"));
+      lcdSetTextPos(2, 5);
+      lcdWrite("       D:%04d", msg.delay);      
+    }
+  }
 }
 
 
